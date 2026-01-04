@@ -1,0 +1,14 @@
+[submodule "k8s-cluster-setup"]
+	path = k8s-cluster-setup
+	url = https://github.com/linskybing/k8s-multicast-setting.git
+	branch = master
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/ted1204/frontend-go
+[submodule "k8s-device-plugin"]
+	path = k8s-device-plugin
+	url = https://github.com/linskybing/k8s-device-plugin.git
+	branch = mps-individual-gpu
+[submodule "backend"]
+	path = backend
+	url = https://github.com/linskybing/platform-go
