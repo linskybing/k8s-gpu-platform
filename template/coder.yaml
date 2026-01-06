@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: code-server-deploy
+  labels:
+    app: code-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: code-server
+  template:
+    metadata:
+      labels:
+        app: code-server
+    spec:
+      containers:
+        - name: code-server
+          image: "codercom/code-server:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PASSWORD
+              value: "1234"
+          volumeMounts:
+            - name: user-home
+              mountPath: /
+      volumes:
+        - name: user-home
+          nfs:
+            server: "{{nfsServer}}"
+            path: /
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: code-server-svc
+spec:
+  type: NodePort
+  selector:
+    app: code-server
+  ports:
+    - name: p1
+      port: 80
+      targetPort: 8080
+      protocol: TCP
