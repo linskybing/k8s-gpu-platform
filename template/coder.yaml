@@ -25,7 +25,7 @@ spec:
               value: "1234"
           volumeMounts:
             - name: user-home
-              mountPath: /
+              mountPath: /home/root
       volumes:
         - name: user-home
           nfs:

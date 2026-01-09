@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ros2-localization-unity
+  annotations:
+    k8s.v1.cni.cncf.io/networks: "default/macvlan-conf"
+  labels:
+    app: pros_app
+spec:
+  containers:
+    - name: rplidar
+      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c"]
+      args:
+        - |
+          source /opt/ros/humble/setup.bash && \
+          source /workspaces/install/setup.bash && \
+          ros2 launch /workspace/pros_app/docker/compose/demo/rplidar_unity.xml
+          
+      envFrom:
+        - configMapRef:
+            name: localization-unity-env-config
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspace
+    - name: lidar-transform
+      image: "ghcr.io/screamlab/pros_unity_lidar_trans_image:latest"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c"]
+      args:
+        - |
+          source /opt/ros/humble/setup.bash && \
+          source /workspaces/install/setup.bash && \
+          ros2 run unity_lidar_transformer lidar_transformer_node
+          
+      envFrom:
+        - configMapRef:
+            name: localization-unity-env-config
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspace
+    - name: localization
+      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c"]
+      args:
+        - |
+          source /opt/ros/humble/setup.bash && \
+          source /workspaces/install/setup.bash && \
+          ros2 launch /workspace/pros_app/docker/compose/demo/localization_unity.xml
+          
+      envFrom:
+        - configMapRef:
+            name: localization-unity-env-config
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspace
+    - name: rosbridge
+      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c"]
+      args:
+        - |
+          source /opt/ros/humble/setup.bash && \
+          source /workspaces/install/setup.bash && \
+          ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+          
+      ports:
+        - containerPort: 9090
+      envFrom:
+        - configMapRef:
+            name: localization-unity-env-config
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspace
+    - name: navigation
+      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c"]
+      args:
+        - |
+          source /opt/ros/humble/setup.bash && \
+          source /workspaces/install/setup.bash && \
+          ros2 launch /workspace/pros_app/docker/compose/demo/navigation_unity.xml
+          
+      envFrom:
+        - configMapRef:
+            name: localization-unity-env-config
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspace
+  volumes:
+    - name: user-home
+      nfs:
+        server: "{{nfsServer}}"
+        path: /
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: localization-unity-env-config
+data:
+  ROS_DOMAIN_ID: "1"
+  RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
+  FASTRTPS_DEFAULT_PROFILES_FILE: "/workspace/fastdds_net1.xml"
