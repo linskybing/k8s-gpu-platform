@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ros2-pros-car
+  labels:
+    app: pros_car
+  annotations:
+    k8s.v1.cni.cncf.io/networks: default/macvlan-conf
+spec:
+  containers:
+    - name: pros-car
+      image: "ghcr.io/screamlab/pros_car_docker_image:latest"
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash","-c","--"]
+      args: ["trap : TERM INT; sleep infinity & wait"]
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          nvidia.com/gpu: "1"
+      envFrom:
+        - configMapRef:
+            name: pros-car-env
+      volumeMounts:
+        - name: user-home
+          mountPath: /workspaces/src
+          subPath: pros_car/src
+        - name: user-home
+          mountPath: /workspaces/screenshots
+          subPath: pros_car/screenshots
+        - name: user-home
+          mountPath: /workspace/fastdds_net1.xml
+          subPath: fastdds_net1.xml
+  volumes:
+    - name: user-home
+      nfs:
+        server: "{{nfsServer}}"
+        path: /
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pros-car-env
+data:
+  ROS_DOMAIN_ID: "1"
+  RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
+  FASTRTPS_DEFAULT_PROFILES_FILE: "/workspace/fastdds_net1.xml"
+  ROS_LOCALHOST_ONLY: "0"
