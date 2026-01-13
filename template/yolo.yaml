@@ -9,7 +9,7 @@ metadata:
 spec:
   containers:
     - name: pros-cameraapi
-      image: "pros_cameraapi:latest"
+      image: "192.168.110.1:30003/library/pros-cameraapi:latest"
       imagePullPolicy: IfNotPresent
       command: ["/bin/bash","-c","--"]
       args: ["trap : TERM INT; sleep infinity & wait"]

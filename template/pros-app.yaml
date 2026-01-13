@@ -2,10 +2,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: ros2-slam-unity
+  annotations:
+    k8s.v1.cni.cncf.io/networks: "default/macvlan-conf"
   labels:
     app: pros_app
-  annotations:
-    k8s.v1.cni.cncf.io/networks: default/macvlan-conf
 spec:
   containers:
     - name: rplidar
@@ -76,9 +76,8 @@ spec:
           mountPath: /workspace
   volumes:
     - name: user-home
-      nfs:
-        server: "{{nfsServer}}"
-        path: /
+      persistentVolumeClaim:
+        claimName: "{{userVolume}}"
 
 ---
 

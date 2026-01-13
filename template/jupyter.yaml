@@ -37,6 +37,8 @@ spec:
           ports:
             - containerPort: 8888
           resources:
+            requests:
+              nvidia.com/gpu: "1"
             limits:
               nvidia.com/gpu: "1"
           env:
@@ -47,6 +49,5 @@ spec:
               mountPath: /workspace
       volumes:
         - name: user-home
-          nfs:
-            server: "{{nfsServer}}"
-            path: /
+          persistentVolumeClaim:
+            claimName: "{{userVolume}}"
