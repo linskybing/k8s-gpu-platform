@@ -27,3 +27,9 @@ temp/
 dist/
 build/
 out/
+
+# Backend build outputs
+/backend/api
+/backend/*.exe
+/backend/*.out
+/backend/*.bin
