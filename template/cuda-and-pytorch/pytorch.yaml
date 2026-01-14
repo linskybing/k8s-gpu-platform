@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-test-5090-job
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      name: gpu-test-5090
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: pytorch-test
+        image: nvcr.io/nvidia/pytorch:24.12-py3
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        command: ["python", "pytorch.py"]
