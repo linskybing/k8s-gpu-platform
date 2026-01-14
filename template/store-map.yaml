@@ -32,9 +32,6 @@ spec:
           - name: user-home
             mountPath: /map
             subPath: pros_app/docker/compose/demo/map/map01
-          - name: user-home
-            mountPath: /workspace/fastdds_net1.xml
-            subPath: fastdds_net1.xml
       volumes:
         - name: user-home
           persistentVolumeClaim:
@@ -49,5 +46,4 @@ metadata:
 data:
   ROS_DOMAIN_ID: "1"
   RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
-  FASTRTPS_DEFAULT_PROFILES_FILE: "/workspace/fastdds_net1.xml"
   ROS_LOCALHOST_ONLY: "0"

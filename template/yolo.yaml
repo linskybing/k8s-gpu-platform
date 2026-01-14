@@ -5,40 +5,36 @@ metadata:
   annotations:
     k8s.v1.cni.cncf.io/networks: "default/macvlan-conf"
   labels:
-    app: ros2_yolo
+    app: "ros2_yolo"
 spec:
   containers:
-    - name: pros-cameraapi
-      image: "192.168.110.1:30003/library/pros-cameraapi:latest"
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash","-c","--"]
-      args: ["trap : TERM INT; sleep infinity & wait"]
-      resources:
-        requests:
-          memory: "256Mi"
-        limits:
-          nvidia.com/gpu: "1"
-      envFrom:
-        - configMapRef:
-            name: yolo-env
-      volumeMounts:
-        - name: user-home
-          mountPath: /workspace/src
-          subPath: jpack5_yolo_opencv_image/src
-        - name: user-home
-          mountPath: /workspace/screenshots
-          subPath: jpack5_yolo_opencv_image/screenshots
-        - name: user-home
-          mountPath: /workspace/fps_screenshots
-          subPath: jpack5_yolo_opencv_image/fps_screenshots
-        - name: user-home
-          mountPath: /workspace/fastdds_net1.xml
-          subPath: fastdds_net1.xml
+  - name: pros-cameraapi
+    image: "registry.screamtrumpet.csie.ncku.edu.tw/screamlab/ros2_yolo_opencv_image:latest"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash","-c","--"]
+    args: ["trap : TERM INT; sleep infinity & wait"]
+    resources:
+      requests:
+        memory: "256Mi"
+      limits:
+        nvidia.com/gpu: "1"
+    envFrom:
+      - configMapRef:
+          name: yolo-env
+    volumeMounts:
+      - name: user-home
+        mountPath: /workspace/src
+        subPath: ros2_yolo_integration/src
+      - name: user-home
+        mountPath: /workspace/screenshots
+        subPath: ros2_yolo_integration/screenshots
+      - name: user-home
+        mountPath: /workspace/fps_screenshots
+        subPath: ros2_yolo_integration/fps_screenshots
   volumes:
     - name: user-home
-      nfs:
-        server: "{{nfsServer}}"
-        path: /
+      persistentVolumeClaim:
+        claimName: "{{userVolume}}"
 
 ---
 
@@ -49,4 +45,3 @@ metadata:
 data:
   ROS_DOMAIN_ID: "1"
   RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
-  FASTRTPS_DEFAULT_PROFILES_FILE: "/workspace/fastdds_net1.xml"

@@ -104,4 +104,3 @@ metadata:
 data:
   ROS_DOMAIN_ID: "1"
   RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
-  FASTRTPS_DEFAULT_PROFILES_FILE: "/workspace/fastdds_net1.xml"
