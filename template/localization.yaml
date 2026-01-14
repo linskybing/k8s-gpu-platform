@@ -92,10 +92,9 @@ spec:
           mountPath: /workspace
   volumes:
     - name: user-home
-      nfs:
-        server: "{{nfsServer}}"
-        path: /
-
+      persistentVolumeClaim:
+        claimName: "{{userVolume}}"
+        
 ---
 
 apiVersion: v1
