@@ -7,84 +7,166 @@ metadata:
   labels:
     app: pros_app
 spec:
+  terminationGracePeriodSeconds: 5
   containers:
-    - name: rplidar
-      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash","-c"]
-      args:
-        - |
-          source /opt/ros/humble/setup.bash && \
-          source /workspaces/install/setup.bash && \
-          ros2 launch /workspace/pros_app/docker/compose/demo/rplidar_unity.xml
-          
-      envFrom:
-        - configMapRef:
-            name: slam-unity-env-config
-      volumeMounts:
-        - name: user-home
-          mountPath: /workspace
-    - name: lidar-transform
-      image: "ghcr.io/screamlab/pros_unity_lidar_trans_image:latest"
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash","-c"]
-      args:
-        - |
-          source /opt/ros/humble/setup.bash && \
-          source /workspaces/install/setup.bash && \
-          ros2 run unity_lidar_transformer lidar_transformer_node
-          
-      envFrom:
-        - configMapRef:
-            name: slam-unity-env-config
-      volumeMounts:
-        - name: user-home
-          mountPath: /workspace
-    - name: slam
-      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash","-c"]
-      args:
-        - |
-          source /opt/ros/humble/setup.bash && \
-          source /workspaces/install/setup.bash && \
-          ros2 launch /workspace/pros_app/docker/compose/demo/slam.xml
-          
-      envFrom:
-        - configMapRef:
-            name: slam-unity-env-config
-      volumeMounts:
-        - name: user-home
-          mountPath: /workspace
-    - name: rosbridge
-      image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash","-c"]
-      args:
-        - |
-          source /opt/ros/humble/setup.bash && \
-          source /workspaces/install/setup.bash && \
-          ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-          
-      ports:
-        - containerPort: 9090
-      envFrom:
-        - configMapRef:
-            name: slam-unity-env-config
-      volumeMounts:
-        - name: user-home
-          mountPath: /workspace
+  - name: tf-pub-odom
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+  - name: tf-pub-laser
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 base_link laser
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+  - name: rplidar
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    securityContext:
+      privileged: true
+    command: ["/bin/bash","-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        source /workspaces/install/setup.bash && \
+        ros2 launch /workspace/pros_app/docker/compose/demo/rplidar_unity.xml
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: user-home
+        mountPath: /workspace
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+
+  - name: lidar-transform
+    image: "ghcr.io/screamlab/pros_unity_lidar_trans_image:latest"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash","-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        source /workspaces/install/setup.bash && \
+        ros2 run unity_lidar_transformer lidar_transformer_node
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: user-home
+        mountPath: /workspace
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+  - name: slam
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash","-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        source /workspaces/install/setup.bash && \
+        ros2 launch /workspace/pros_app/docker/compose/demo/slam.xml \
+        base_frame:=base_link \
+        odom_frame:=odom \
+        map_frame:=map \
+        transform_timeout:=1.0 \
+        scan_queue_size:=50 \
+        tf_buffer_duration:=30.0
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: user-home
+        mountPath: /workspace
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+  - name: rosbridge
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash","-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        source /workspaces/install/setup.bash && \
+        ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+        send_buffer_limit:=20000000 \
+        fragment_timeout:=600 \
+        binary_encoder:=bson
+    ports:
+      - containerPort: 9090
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: user-home
+        mountPath: /workspace
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
+  - name: tf-monitor
+    image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        source /opt/ros/humble/setup.bash && \
+        sleep 5 && \
+        while true; do \
+          echo "-------- TF STATUS --------"; \
+          ros2 run tf2_ros tf2_monitor; \
+          sleep 5; \
+        done
+    envFrom:
+      - configMapRef:
+          name: slam-unity-env-config
+    volumeMounts:
+      - name: shm
+        mountPath: /dev/shm
+      - name: dds-config
+        mountPath: /etc/ros/fastdds.xml
+        subPath: fastdds.xml
   volumes:
     - name: user-home
       persistentVolumeClaim:
         claimName: "{{userVolume}}"
-
----
-
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: slam-unity-env-config
-data:
-  ROS_DOMAIN_ID: "1"
-  RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
+    - name: shm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 1Gi
+    - name: dds-config
+      configMap:
+        name: fastdds-optimization-config

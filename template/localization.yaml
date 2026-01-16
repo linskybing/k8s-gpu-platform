@@ -27,6 +27,7 @@ data:
             </rtps>
         </participant>
     </profiles>
+    
 
 ---
 
@@ -39,16 +40,17 @@ metadata:
   labels:
     app: "pros_app"
 spec:
-  shareProcessNamespace: true
   containers:
   - name: rplidar
     image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
     command: ["/bin/bash","-c"]
     args:
       - |
         source /opt/ros/humble/setup.bash && \
         source /workspaces/install/setup.bash && \
         ros2 launch /workspace/pros_app/docker/compose/demo/rplidar_unity.xml
+        
     envFrom:
       - configMapRef:
           name: localization-unity-env-config
@@ -62,12 +64,14 @@ spec:
         subPath: fastdds.xml
   - name: lidar-transform
     image: "ghcr.io/screamlab/pros_unity_lidar_trans_image:latest"
+    imagePullPolicy: IfNotPresent
     command: ["/bin/bash","-c"]
     args:
       - |
         source /opt/ros/humble/setup.bash && \
         source /workspaces/install/setup.bash && \
         ros2 run unity_lidar_transformer lidar_transformer_node
+        
     envFrom:
       - configMapRef:
           name: localization-unity-env-config
@@ -81,12 +85,14 @@ spec:
         subPath: fastdds.xml
   - name: localization
     image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
     command: ["/bin/bash","-c"]
     args:
       - |
         source /opt/ros/humble/setup.bash && \
         source /workspaces/install/setup.bash && \
         ros2 launch /workspace/pros_app/docker/compose/demo/localization_unity.xml
+        
     envFrom:
       - configMapRef:
           name: localization-unity-env-config
@@ -100,12 +106,16 @@ spec:
         subPath: fastdds.xml
   - name: rosbridge
     image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
     command: ["/bin/bash","-c"]
     args:
       - |
         source /opt/ros/humble/setup.bash && \
         source /workspaces/install/setup.bash && \
-        ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+        ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+        send_buffer_limit:=20000000 \
+        fragment_timeout:=600
+        
     ports:
       - containerPort: 9090
     envFrom:
@@ -121,6 +131,7 @@ spec:
         subPath: fastdds.xml
   - name: navigation
     image: "ghcr.io/screamlab/pros_jetson_driver_image:0.1.0"
+    imagePullPolicy: IfNotPresent
     command: ["/bin/bash","-c"]
     args:
       - |
@@ -128,6 +139,7 @@ spec:
         source /workspaces/install/setup.bash && \
         sleep 5 && \
         ros2 launch /workspace/pros_app/docker/compose/demo/navigation_unity.xml
+        
     envFrom:
       - configMapRef:
           name: localization-unity-env-config

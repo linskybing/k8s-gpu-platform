@@ -132,6 +132,27 @@ cd backend && git pull origin main && cd ..
    # Deploy Web UI
    ```
 
+## Important deployment notes (simple)
+
+- Start with the `k8s-cluster-setup` submodule. It creates the Kubernetes cluster and network settings that other components depend on.
+
+- Network and interface settings are environment specific. Update scripts in `k8s-cluster-setup/scripts/` (interface name, CIDR, MASTER_IP, HARBOR_IP) before running them.
+
+- Backend requires an initial database and an admin account. Run the SQL seed at `backend/infra/db/schema.sql`. Provide a `.env` or K8s Secret with correct DB credentials so initialization can succeed.
+
+- Before deploying the backend, build and push the backend image to your registry. Use `backend/scripts/build_image.sh` but edit its registry/namespace/image variables to match your Harbor or registry.
+
+- Development manifests may use `hostPath` mounts. Do not use these in production. Replace `hostPath` with `Secret`, `ConfigMap`, or `PVC` for shared clusters.
+
+- Suggested backend apply order after image is available in the registry:
+   1. `kubectl apply -f ca.yaml` (if present)
+   2. `kubectl apply -f go-api.yaml`
+   3. `kubectl apply -f postgres.yaml`
+
+- Frontend development: run the dev server on the host for fast iteration (for example, use `tmux` and `npm run dev`). To deploy the frontend to K8s, build static files (`npm run build`), build a Docker image, push to your registry, and update the frontend manifest image.
+
+A checklist of exact commands can be added if needed.
+
 ## Development Workflow
 
 ### Working Within Submodules
