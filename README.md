@@ -1,233 +1,199 @@
-# Multi-Node K8s GPU Management System
+# K8s GPU Platform
 
-A comprehensive GPU management system designed for multi-node Kubernetes clusters, specifically optimized for environments with 4x NVIDIA RTX 5090 GPUs per node.
+RKE2 + DRA (Dynamic Resource Allocation) GPU 叢集的**安裝與維運腳本**，以及 GPU 工作負載範本。
+支援任意數量節點、任意 GPU 數量。
 
-## System Architecture
+應用程式碼與工作負載範本不在本 repo：backend、frontend、device-plugin、cluster-setup 已移除（各自獨立維護）。
+本 repo 只有 `scripts/`，不使用 git submodule。
 
-This system consists of four core components managed as Git Submodules:
-
-### 1. [k8s-cluster-setup](https://github.com/linskybing/k8s-multicast-setting)
-**K8s Cluster Infrastructure**
-
-- Responsible for building multi-node K8s clusters
-- Configures multi-GPU resource pool sharing mechanisms
-- Sets up networking and storage infrastructure
-- Integrates with k8s-device-plugin for GPU scheduling support
-
-### 2. [k8s-device-plugin](https://github.com/linskybing/k8s-device-plugin)
-**GPU Device Plugin (Custom Build)**
-
-- Custom modified version based on NVIDIA Device Plugin
-- **Core Feature**: Supports multi-GPU scheduling within a single Pod
-- Enables Multi-GPU CUDA workloads
-- Provides GPU MPS (Multi-Process Service) support
-- Implements fine-grained GPU resource allocation
-
-### 3. [frontend](https://github.com/ted1204/frontend-go)
-**User Interface Layer**
-
-- Provides the **sole interface** for users to access the K8s cluster
-- Web UI for cluster management and monitoring
-- Offers multiple functionalities:
-  - GPU resource visualization
-  - Pod/Job management
-  - User access control
-  - Real-time monitoring dashboard
-
-### 4. [backend](https://github.com/linskybing/platform-go)
-**API Server**
-
-- Provides backend API services
-- Handle all API requests from frontend
-- Interacts with K8s API Server
-- Manages user authentication and authorization
-- Handles GPU resource allocation logic
-
-## Component Architecture Diagram
+## 目錄結構
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   User Access                        │
-└──────────────────────┬──────────────────────────────┘
-                       │
-                       ▼
-            ┌──────────────────────┐
-            │   frontend           │ (Web UI)
-            └──────────┬───────────┘
-                       │ API Calls
-                       ▼
-            ┌──────────────────────┐
-            │   backend            │ (API Server)
-            └──────────┬───────────┘
-                       │ K8s API
-                       ▼
-            ┌──────────────────────┐
-            │  K8s Cluster         │
-            │  k8s-cluster-setup   │ (Infrastructure)
-            └──────────┬───────────┘
-                       │
-                       ▼
-            ┌──────────────────────┐
-            │ k8s-device-plugin    │ (GPU Scheduler)
-            │ (Multi-GPU Support)  │
-            └──────────────────────┘
-                       │
-                       ▼
-            ┌──────────────────────┐
-            │  4x RTX 5090 GPUs    │ (Per Node)
-            └──────────────────────┘
+k8s-gpu-platform/
+└── scripts/
+    ├── setup/
+    │   ├── rke2.sh          # 安裝 RKE2 server / agent 並加入叢集
+    │   └── gpu-dra.sh       # 安裝 GPU Operator + NVIDIA DRA driver
+    ├── operations/
+    │   └── gpu-status.sh    # 一次看完 DRA GPU 狀態
+    └── selfcheck.sh         # 腳本自我檢查（不碰主機、不碰叢集）
 ```
 
-## Quick Start
-
-### 1. Clone Repository (with all submodules)
+所有 setup 腳本都支援 `DRY_RUN=1`，只印出將執行的指令，先看再跑：
 
 ```bash
-# Clone main repo with all submodules
-git clone --recurse-submodules <main-repo-url>
-cd k8s
-
-# Or if already cloned, initialize submodules
-git submodule update --init --recursive
+DRY_RUN=1 sudo scripts/setup/rke2.sh server
+DRY_RUN=1 scripts/setup/gpu-dra.sh gpu1 gpu2 gpu3
 ```
 
-### 2. Update All Submodules to Latest
+## 架構
+
+```mermaid
+graph TB
+    Sched[kube-scheduler<br/>DRA-aware] --> K8sAPI[Kubernetes API Server]
+    DRADriver[NVIDIA DRA Driver<br/>gpu.nvidia.com] --> K8sAPI
+    GPUOp[GPU Operator<br/>driver / toolkit / CDI] --> K8sAPI
+    K8sAPI --> N1[Node 1<br/>GPU 0..N]
+    K8sAPI --> N2[Node 2<br/>GPU 0..N]
+    K8sAPI --> NN[Node N<br/>GPU 0..N]
+```
+
+GPU 調度流程：
+
+```mermaid
+sequenceDiagram
+    participant User as 使用者
+    participant K8s as K8s API Server
+    participant Sched as Scheduler
+    participant DRA as DRA Driver
+
+    User->>K8s: 建立 Pod + ResourceClaim(Template)
+    K8s->>Sched: 排程 Pod
+    Sched->>DRA: 依 DeviceClass 查 ResourceSlices
+    DRA-->>Sched: 回傳可用 GPU 裝置
+    Sched->>K8s: 分配裝置並綁定 Node
+    K8s->>DRA: kubelet plugin 以 CDI 注入 GPU
+    DRA-->>User: Pod 啟動，GPU 就緒
+```
+
+## 前置條件
+
+- N 台 Ubuntu 22.04+ 節點（至少 1 台有 NVIDIA GPU），有 root/SSH
+- Kubernetes **≥ 1.34.2**：DRA `resource.k8s.io/v1` 從 1.34 起 GA，NVIDIA DRA driver 0.4.x 要求 1.34.2+
+- NVIDIA Driver ≥ 580（由 GPU Operator 安裝，或事先裝在 host 上）
+- 執行 `gpu-dra.sh` 的機器需有 `kubectl` 與 `helm`
+
+## Step 1 — 安裝叢集
 
 ```bash
-# Update all submodules to their latest remote state
-git submodule update --remote --merge
+# 第一台 control-plane（結束後會印出 join token 與 kubeconfig 路徑）
+sudo scripts/setup/rke2.sh server
 
-# Or update individually
-cd k8s-cluster-setup && git pull origin master && cd ..
-cd k8s-device-plugin && git pull origin mps-individual-gpu && cd ..
-cd frontend && git pull origin main && cd ..
-cd backend && git pull origin main && cd ..
+# 其他 control-plane（HA）
+sudo scripts/setup/rke2.sh server <FIRST_NODE_IP> <NODE_TOKEN>
+
+# worker / GPU 節點
+sudo scripts/setup/rke2.sh agent <CONTROL_PLANE_IP> <NODE_TOKEN>
 ```
 
-### 3. Deployment Order
+腳本會：寫 `/etc/rancher/rke2/config.yaml`(0600) → 安裝 RKE2（預設 channel `v1.34`，可用 `RKE2_CHANNEL` 覆寫）
+→ 啟用服務 → 在 server 上把 kubeconfig 複製到呼叫者的 `~/.kube/config`。
 
-1. **Build K8s Cluster**
-   ```bash
-   cd k8s-cluster-setup
-   # Follow its README.md to deploy K8s cluster
-   ```
+kubectl 等執行檔在 `/var/lib/rancher/rke2/bin`，記得加進 `PATH`。
 
-2. **Deploy GPU Device Plugin**
-   ```bash
-   cd k8s-device-plugin
-   # Build and deploy custom GPU plugin (mps-individual-gpu branch)
-   make build
-   kubectl apply -f deployments/
-   ```
+## Step 2 — 安裝 GPU + DRA
 
-3. **Deploy API Server**
-   ```bash
-   cd backend
-   # Deploy backend API service
-   ```
-
-4. **Deploy Frontend UI**
-   ```bash
-   cd frontend
-   # Deploy Web UI
-   ```
-
-## Important deployment notes (simple)
-
-- Start with the `k8s-cluster-setup` submodule. It creates the Kubernetes cluster and network settings that other components depend on.
-
-- Network and interface settings are environment specific. Update scripts in `k8s-cluster-setup/scripts/` (interface name, CIDR, MASTER_IP, HARBOR_IP) before running them.
-
-- Backend requires an initial database and an admin account. Run the SQL seed at `backend/infra/db/schema.sql`. Provide a `.env` or K8s Secret with correct DB credentials so initialization can succeed.
-
-- Before deploying the backend, build and push the backend image to your registry. Use `backend/scripts/build_image.sh` but edit its registry/namespace/image variables to match your Harbor or registry.
-
-- Development manifests may use `hostPath` mounts. Do not use these in production. Replace `hostPath` with `Secret`, `ConfigMap`, or `PVC` for shared clusters.
-
-- Suggested backend apply order after image is available in the registry:
-   1. `kubectl apply -f ca.yaml` (if present)
-   2. `kubectl apply -f go-api.yaml`
-   3. `kubectl apply -f postgres.yaml`
-
-- Frontend development: run the dev server on the host for fast iteration (for example, use `tmux` and `npm run dev`). To deploy the frontend to K8s, build static files (`npm run build`), build a Docker image, push to your registry, and update the frontend manifest image.
-
-A checklist of exact commands can be added if needed.
-
-## Development Workflow
-
-### Working Within Submodules
+列出要跑 GPU 的節點（只有這些節點會被貼上 `nvidia.com/dra-kubelet-plugin=true`，DRA kubelet plugin 只在這些節點執行）：
 
 ```bash
-# Enter submodule
-cd k8s-device-plugin
-
-# Create new branch and develop
-git checkout -b feature/new-feature
-# ... make changes ...
-git add .
-git commit -m "Add new feature"
-git push origin feature/new-feature
-
-# Return to main repo and update submodule reference
-cd ..
-git add k8s-device-plugin
-git commit -m "Update k8s-device-plugin to latest"
+scripts/setup/gpu-dra.sh gpu1 gpu2 gpu3
 ```
 
-### Keep All Modules Synchronized
+| 環境變數 | 預設 | 用途 |
+|---|---|---|
+| `MANAGE_DRIVER` | `true` | `false` = host 已裝 NVIDIA driver，GPU Operator 不接管 |
+| `NVIDIA_DRIVER_ROOT` | `/run/nvidia/driver`（host driver 時為 `/`） | driver 根目錄 |
+| `GPU_OPERATOR_VERSION` | `v26.3.3` | GPU Operator chart 版本 |
+| `DRA_DRIVER_VERSION` | `0.4.1` | `dra-driver-nvidia-gpu` chart 版本 |
+| `DRA_NAMESPACE` / `DRA_RELEASE` | `nvidia-dra-driver-gpu` / `dra-driver-nvidia-gpu` | 對齊既有安裝 |
+| `NAME_OVERRIDE` | 無 | 從 v25.x 升級時設為 `nvidia-dra-driver-gpu` |
+
+重點：
+
+- 安裝時 `devicePlugin.enabled=false` — DRA 取代 `nvidia.com/gpu` extended resource，兩者不並存
+- 已存在 DRA driver 的叢集要用 `DRA_NAMESPACE` / `DRA_RELEASE` 對齊，否則會變成第二份 driver（同一 driver name 兩個 kubelet plugin 會壞掉）。腳本會擋掉 Helm 管理的重複安裝，但**非 Helm 安裝（ArgoCD / kustomize）偵測不到**，請先 `DRY_RUN=1` 確認
+- `gpu.nvidia.com`、`mig.nvidia.com` 這些 DeviceClass 由 chart 自動建立，不需自己套用
+
+## Step 3 — 驗證
 
 ```bash
-# One-command update all submodules to latest
-./scripts/update-all-submodules.sh
+scripts/operations/gpu-status.sh
 ```
 
-## Hardware Requirements
+會列出：節點與 plugin 標籤、DRA driver pods、DeviceClass、每個節點被廣告的 GPU（ResourceSlices）、GPU 型號、正在使用的 ResourceClaim。
 
-- **Node Configuration**: Each node requires 4x NVIDIA RTX 5090 GPUs
-- **Network**: High-speed interconnect network (recommended 10GbE or higher)
-- **Storage**: Shared storage system (e.g., NFS, Ceph)
+## 使用 GPU 工作負載
 
-## Technology Stack
+`resource.k8s.io/v1` 的請求寫法（`requests[].exactly`，Pod 端直接寫 `resourceClaimTemplateName`，沒有 `source:`）：
 
-- **Infrastructure**: Kubernetes, Containerd
-- **GPU Management**: NVIDIA Device Plugin (Custom), CUDA, MPS
-- **Backend**: Go (backend)
-- **Frontend**: TypeScript, React, Vite (frontend)
-- **Build Tools**: Docker, Helm
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-claim-template
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            count: 1          # 要 4 張就寫 4
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-workload
+spec:
+  restartPolicy: Never
+  containers:
+    - name: cuda
+      image: nvidia/cuda:12.9.0-runtime-ubuntu22.04
+      command: ["nvidia-smi"]
+      resources:
+        claims:
+          - name: gpu       # 對應下面 resourceClaims 的名稱
+  resourceClaims:
+    - name: gpu
+      resourceClaimTemplateName: gpu-claim-template
+```
 
-## Maintainers
+多個 Pod 共用同一批 GPU：改建 `ResourceClaim`（不是 Template），Pod 用 `resourceClaimName` 引用。
 
-- k8s-cluster-setup: @linskybing
-- k8s-device-plugin: @linskybing (mps-individual-gpu branch)
-- backend: @linskybing
-- frontend: @ted1204
+指定 GPU 型號時自建 DeviceClass：
 
-## License
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: rtx5090.gpu.nvidia.com
+spec:
+  selectors:
+    - cel:
+        expression: >-
+          device.driver == 'gpu.nvidia.com' &&
+          device.attributes['gpu.nvidia.com'].type == 'gpu' &&
+          device.attributes['gpu.nvidia.com'].productName.contains('5090')
+```
 
-Please refer to individual LICENSE files in each submodule.
+> 舊 YAML 若還在寫 `resources.limits."nvidia.com/gpu"`：device plugin 被關掉後這些請求不會被滿足，需改寫成上面的 ResourceClaim 形式（或啟用 `DRAExtendedResource` feature gate 讓 scheduler 自動轉換，K8s 1.36+ 預設開啟）。
+
+## 開發／修改腳本
+
+```bash
+scripts/selfcheck.sh   # 語法 + 參數分派 + driver root 分支，不需叢集
+```
+
+## 與舊架構差異
+
+| | 舊版 | 現在 |
+|---|---|---|
+| 程式碼管理 | 4 個 submodule | 本 repo 只留 scripts |
+| K8s 安裝 | kubeadm 手動 | `scripts/setup/rke2.sh` |
+| GPU 調度 | 自訂 Device Plugin + MPS | K8s DRA（原生 `resource.k8s.io/v1`） |
+| GPU 資源定義 | `nvidia.com/gpu` 整數計數 | ResourceClaim + DeviceClass（CEL 選擇器） |
+| 節點數量 | 固定 4x RTX 5090 / node | 任意節點、任意 GPU 數量 |
 
 ## FAQ
 
-### How to verify GPUs are configured correctly?
+**如何確認 GPU 被 DRA 正確識別？** `scripts/operations/gpu-status.sh`，或 `kubectl get resourceslices -o yaml | grep productName`。
 
-```bash
-kubectl describe nodes | grep nvidia.com/gpu
-```
+**如何新增節點？** 在新節點跑 `sudo scripts/setup/rke2.sh agent <IP> <TOKEN>`，再重跑 `scripts/setup/gpu-dra.sh <新節點>`（Helm 是 upgrade，可重複執行）。
 
-### How to test multi-GPU Pods?
+**如何限制使用者只能用特定 GPU？** 自建型號專屬 DeviceClass，再用 Kyverno 限制 namespace 可引用的 DeviceClass。
 
-Refer to example YAML files in `k8s-device-plugin/tests/`.
-
-### How to update a single submodule?
-
-```bash
-cd <submodule-name>
-git pull origin <branch-name>
-cd ..
-git add <submodule-name>
-git commit -m "Update <submodule-name>"
-```
+**Pod 卡在 Pending 且錯誤是 `must specify one of: resourceClaimName, resourceClaimTemplateName`？** `spec.resourceClaims` 每一項只能設其中一個；若寫法正確，通常是叢集裡有 K8s < 1.32 建的 mutating webhook 把欄位改掉了。
 
 ---
 
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-08-18
